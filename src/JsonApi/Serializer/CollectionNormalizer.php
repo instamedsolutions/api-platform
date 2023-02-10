@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace ApiPlatform\JsonApi\Serializer;
 
+use Symfony\Component\PropertyAccess\PropertyAccessorInterface;
 use ApiPlatform\Api\ResourceClassResolverInterface;
 use ApiPlatform\Core\Metadata\Resource\ResourceMetadata;
 use ApiPlatform\Metadata\Resource\ResourceMetadataCollection;
@@ -31,7 +32,9 @@ final class CollectionNormalizer extends AbstractCollectionNormalizer
 {
     public const FORMAT = 'jsonapi';
 
-    public function __construct(ResourceClassResolverInterface $resourceClassResolver, string $pageParameterName, $resourceMetadataFactory)
+    private $propertyAccessor;
+
+    public function __construct(ResourceClassResolverInterface $resourceClassResolver, string $pageParameterName, $resourceMetadataFactory,PropertyAccessorInterface $propertyAccessor,)
     {
         parent::__construct($resourceClassResolver, $pageParameterName, $resourceMetadataFactory);
     }
@@ -59,7 +62,26 @@ final class CollectionNormalizer extends AbstractCollectionNormalizer
             ],
         ];
 
-        if ($paginated) {
+
+        $metadata = isset($context['resource_class']) && null !== $this->resourceMetadataFactory ? $this->resourceMetadataFactory->create($context['resource_class']) : null;
+        $isPaginatedWithCursor = $paginated && null !== $metadata && null !== $cursorPaginationAttribute = $metadata->getCollectionOperationAttribute($context['collection_operation_name'] ?? $context['subresource_operation_name'], 'pagination_via_cursor', null, true);
+
+        if ($isPaginatedWithCursor) {
+            $objects = iterator_to_array($object);
+            $firstObject = current($objects);
+            $lastObject = end($objects);
+
+            $data['hydra:view']['self'] = IriHelper::createIri($parsed['parts'], $parsed['parameters']);
+
+            if ($firstObject && 1. !== $currentPage) {
+                $data['links']['prev'] = IriHelper::createIri($parsed['parts'], array_merge($parsed['parameters'],$this->cursorPaginationFields($cursorPaginationAttribute, -1, $firstObject)));
+            }
+
+            if ($lastObject && null !== $lastPage && $currentPage !== $lastPage || null === $lastPage && $pageTotalItems >= $itemsPerPage) {
+                $data['links']['next'] = IriHelper::createIri($parsed['parts'], array_merge($parsed['parameters'],$this->cursorPaginationFields($cursorPaginationAttribute, 1, $lastObject)));
+            }
+        }
+        elseif ($paginated) {
             if (null !== $lastPage) {
                 $data['links']['first'] = IriHelper::createIri($parsed['parts'], $parsed['parameters'], $this->pageParameterName, 1., $urlGenerationStrategy);
                 $data['links']['last'] = IriHelper::createIri($parsed['parts'], $parsed['parameters'], $this->pageParameterName, $lastPage, $urlGenerationStrategy);
@@ -116,6 +138,27 @@ final class CollectionNormalizer extends AbstractCollectionNormalizer
 
         return $data;
     }
+
+
+    private function cursorPaginationFields(array $fields, int $direction, $object)
+    {
+        $paginationFilters = [];
+
+
+        foreach ($fields as $field) {
+            $forwardRangeOperator = 'desc' === strtolower($field['direction']) ? 'lt' : 'gt';
+            $backwardRangeOperator = 'gt' === $forwardRangeOperator ? 'lt' : 'gt';
+
+            $operator = $direction > 0 ? $forwardRangeOperator : $backwardRangeOperator;
+
+            $paginationFilters[$field['field']] = [
+                $operator => (string) $this->propertyAccessor->getValue($object, $field['field']),
+            ];
+        }
+
+        return $paginationFilters;
+    }
+
 }
 
 class_alias(CollectionNormalizer::class, \ApiPlatform\Core\JsonApi\Serializer\CollectionNormalizer::class);
