@@ -881,6 +881,9 @@ final class ApiPlatformExtension extends Extension implements PrependExtensionIn
         if ($config['metadata_backward_compatibility_layer']) {
             $container->getDefinition('api_platform.mercure.listener.response.add_link_header')->setArgument(0, new Reference('api_platform.metadata.resource.metadata_factory'));
         }
+
+        $container->setParameter('api_platform.mercure.formats', $config['mercure']['formats'] ?? []);
+
     }
 
     private function registerMessengerConfiguration(ContainerBuilder $container, array $config, XmlFileLoader $loader): void

@@ -66,12 +66,13 @@ final class PublishMercureUpdatesListener
     private $formats;
     private $graphQlSubscriptionManager;
     private $graphQlMercureSubscriptionIriGenerator;
+    private $mercureFormats;
 
     /**
      * @param array<string, string[]|string> $formats
      * @param HubRegistry|callable           $hubRegistry
      */
-    public function __construct(ResourceClassResolverInterface $resourceClassResolver, IriConverterInterface $iriConverter, ResourceMetadataCollectionFactoryInterface $resourceMetadataFactory, SerializerInterface $serializer, array $formats, MessageBusInterface $messageBus = null, $hubRegistry = null, ?GraphQlSubscriptionManagerInterface $graphQlSubscriptionManager = null, ?GraphQlMercureSubscriptionIriGeneratorInterface $graphQlMercureSubscriptionIriGenerator = null, ExpressionLanguage $expressionLanguage = null)
+    public function __construct(ResourceClassResolverInterface $resourceClassResolver, IriConverterInterface $iriConverter, ResourceMetadataCollectionFactoryInterface $resourceMetadataFactory, SerializerInterface $serializer, array $formats, MessageBusInterface $messageBus = null, $hubRegistry = null, ?GraphQlSubscriptionManagerInterface $graphQlSubscriptionManager = null, ?GraphQlMercureSubscriptionIriGeneratorInterface $graphQlMercureSubscriptionIriGenerator = null, ExpressionLanguage $expressionLanguage = null,array $mercureFormats = null)
     {
         if (null === $messageBus && null === $hubRegistry) {
             throw new InvalidArgumentException('A message bus or a hub registry must be provided.');
@@ -88,6 +89,7 @@ final class PublishMercureUpdatesListener
         $this->expressionLanguage = $expressionLanguage ?? (class_exists(ExpressionLanguage::class) ? new ExpressionLanguage() : null);
         $this->graphQlSubscriptionManager = $graphQlSubscriptionManager;
         $this->graphQlMercureSubscriptionIriGenerator = $graphQlMercureSubscriptionIriGenerator;
+        $this->mercureFormats = $mercureFormats;
         $this->reset();
 
         if ($this->expressionLanguage) {
@@ -140,15 +142,15 @@ final class PublishMercureUpdatesListener
     {
         try {
             foreach ($this->createdObjects as $object) {
-                $this->publishUpdate($object, $this->createdObjects[$object], 'create');
+                $this->publishUpdates($object, $this->createdObjects[$object], 'create');
             }
 
             foreach ($this->updatedObjects as $object) {
-                $this->publishUpdate($object, $this->updatedObjects[$object], 'update');
+                $this->publishUpdates($object, $this->updatedObjects[$object], 'update');
             }
 
             foreach ($this->deletedObjects as $object) {
-                $this->publishUpdate($object, $this->deletedObjects[$object], 'delete');
+                $this->publishUpdates($object, $this->deletedObjects[$object], 'delete');
             }
         } finally {
             $this->reset();
@@ -253,10 +255,25 @@ final class PublishMercureUpdatesListener
         $this->{$property}[$object] = $options;
     }
 
+
+    private function publishUpdates($entity, array $options): void
+    {
+
+        if($this->mercureFormats) {
+            foreach ($this->mercureFormats as $format) {
+                $this->publishUpdate($entity, $options, $format);
+            }
+        } else {
+            $this->publishUpdate($entity, $options);
+        }
+
+    }
+
+
     /**
      * @param object $object
      */
-    private function publishUpdate($object, array $options, string $type): void
+    private function publishUpdate($object, array $options, string $type,string $format): void
     {
         if ($object instanceof \stdClass) {
             // By convention, if the object has been deleted, we send only its IRI.
@@ -270,7 +287,13 @@ final class PublishMercureUpdatesListener
             $context = $options['normalization_context'] ?? $this->resourceMetadataFactory->create($resourceClass)->getOperation()->getNormalizationContext() ?? [];
 
             $iri = $options['topics'] ?? $this->iriConverter->getIriFromResource($object, UrlGeneratorInterface::ABS_URL);
-            $data = $options['data'] ?? $this->serializer->serialize($object, key($this->formats), $context);
+            $data = $options['data'] ?? $this->serializer->serialize($object, $format ?? key($this->formats), $context);
+        }
+
+        if($format) {
+            foreach ($iri as &$url) {
+                $url = "/$format$url";
+            }
         }
 
         $updates = array_merge([$this->buildUpdate($iri, $data, $options)], $this->getGraphQlSubscriptionUpdates($object, $options, $type));

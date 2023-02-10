@@ -18,6 +18,7 @@
             <argument type="service" id="mercure.hub.default.publisher" />
             <argument type="service" id="api_platform.graphql.subscription.subscription_manager" on-invalid="ignore" />
             <argument type="service" id="api_platform.graphql.subscription.mercure_iri_generator" on-invalid="ignore" />
+            <argument>%api_platform.mercure.formats%</argument>
 
             <tag name="doctrine.event_listener" event="onFlush" />
             <tag name="doctrine.event_listener" event="postFlush" />
