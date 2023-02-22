@@ -37,6 +37,9 @@ final class CollectionNormalizer extends AbstractCollectionNormalizer
     public function __construct(ResourceClassResolverInterface $resourceClassResolver, string $pageParameterName, $resourceMetadataFactory,PropertyAccessorInterface $propertyAccessor,)
     {
         parent::__construct($resourceClassResolver, $pageParameterName, $resourceMetadataFactory);
+        
+        $this->propertyAccessor = $propertyAccessor ?? PropertyAccess::createPropertyAccessor();
+        
     }
 
     /**
